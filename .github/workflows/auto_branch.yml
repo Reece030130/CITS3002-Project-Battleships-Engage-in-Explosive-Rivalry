@@ -17,31 +17,30 @@ jobs:
 
       - name: Create branch from issue
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          # Get issue number and title from the event payload
+          # Extract issue number and title from the event payload
           ISSUE_NUMBER="${{ github.event.issue.number }}"
           ISSUE_TITLE="${{ github.event.issue.title }}"
 
-          # Construct branch name by replacing spaces with hyphens and formatting
+          # Construct branch name: replace spaces with hyphens, make lowercase, remove unwanted chars, and limit length
           ISSUE_BRANCH="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
-          # Convert branch name to lowercase, remove unwanted characters, and limit length
           ISSUE_BRANCH=$(echo "$ISSUE_BRANCH" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
           echo "Creating branch: $ISSUE_BRANCH"
 
-          # Set Git bot credentials
+          # Configure Git with the bot’s identity
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Fetch latest changes from the remote and check out the main branch (or your default branch)
+          # Fetch the latest changes and switch to the default branch (assumed 'main')
           git fetch origin
           git checkout main
 
-          # Update the remote URL to include the token so that push operations can authenticate
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          # Explicitly set the remote URL with your token to avoid authentication issues during push/fetch
+          git remote set-url origin "https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.git"
           
-          # Create and push the new branch to the remote
+          # Create and push the new branch
           git checkout -b "$ISSUE_BRANCH"
           git push -u origin "$ISSUE_BRANCH"
-          
-          echo "Branch $ISSUE_BRANCH created and pushed successfully."
+
+          echo "Branch '$ISSUE_BRANCH' created and pushed successfully."
