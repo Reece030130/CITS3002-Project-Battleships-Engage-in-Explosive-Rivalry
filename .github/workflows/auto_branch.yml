@@ -7,6 +7,7 @@ on:
 jobs:
   create-branch:
     runs-on: ubuntu-latest
+
     steps:
       - name: Set up SSH
         run: |
@@ -15,24 +16,17 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      - name: Checkout repo
-        uses: actions/checkout@v3
-        with:
-          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Extract branch name from issue
-        id: vars
+      - name: Clone repo
         run: |
+          git clone git@github.com:${{ github.repository }} repo
+          cd repo
+
           ISSUE_NUMBER=${{ github.event.issue.number }}
           ISSUE_TITLE="${{ github.event.issue.title }}"
-          BRANCH_NAME="issue-${ISSUE_NUMBER}-$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')"
-          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+          SAFE_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
+          BRANCH_NAME="issue-${ISSUE_NUMBER}-${SAFE_TITLE}"
 
-      - name: Create and push new branch
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
-
-          git fetch origin
-          git checkout -b "${{ steps.vars.outputs.branch_name }}"
-          git push origin "${{ steps.vars.outputs.branch_name }}"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
