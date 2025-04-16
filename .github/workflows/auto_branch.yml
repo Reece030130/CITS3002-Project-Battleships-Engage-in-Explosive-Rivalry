@@ -1,46 +1,33 @@
-name: Auto Branch for Issue
-on:
-  issues:
-    types: [assigned]
+- name: Debug Git Branch Creation
+  env:
+    GH_TOKEN: ${{ secrets.GH_PAT }}
+  run: |
+    ISSUE_NUMBER=${{ github.event.issue.number }}
+    ISSUE_TITLE="${{ github.event.issue.title }}"
 
-jobs:
-  create-branch:
-    runs-on: ubuntu-latest
+    # Clean and format the issue title for branch naming
+    ISSUE_BRANCH="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
+    ISSUE_BRANCH=$(echo "$ISSUE_BRANCH" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GH_PAT }}
+    echo "Creating branch: $ISSUE_BRANCH"
 
-    - name: Debug Git Branch Creation
-      env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
-      run: |
-        ISSUE_NUMBER=${{ github.event.issue.number }}
-        ISSUE_TITLE="${{ github.event.issue.title }}"
+    # Configure Git with bot credentials
+    git config --global user.name "github-actions[bot]"
+    git config --global user.email "github-actions[bot]@users.noreply.github.com"
+    
+    # Fetch all branches and switch to the default branch (assumed as 'main')
+    git fetch origin
+    git checkout main
+    
+    # Debugging logs to show current status
+    git status
+    git branch -a
+    
+    # Explicitly set the remote URL with the token to avoid authentication issues
+    git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+    
+    # Create the new branch and push
+    git checkout -b "$ISSUE_BRANCH"
+    git push -u origin "$ISSUE_BRANCH"
 
-        # Clean and format the issue title for branch naming
-        ISSUE_BRANCH="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
-        ISSUE_BRANCH=$(echo "$ISSUE_BRANCH" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
-
-        echo "Creating branch: $ISSUE_BRANCH"
-
-        # Configure Git with bot credentials
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        
-        # Fetch all branches and switch to the default branch (assumed as 'main')
-        git fetch origin
-        git checkout main
-        
-        # Debugging logs to show current status
-        git status
-        git branch -a
-        
-        # Create the new branch and push
-        git checkout -b "$ISSUE_BRANCH"
-        git push -u origin "$ISSUE_BRANCH"
-
-        echo "Branch $ISSUE_BRANCH created and pushed"
+    echo "Branch $ISSUE_BRANCH created and pushed"
