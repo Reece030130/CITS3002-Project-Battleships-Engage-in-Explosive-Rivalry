@@ -9,38 +9,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}  # this ensures the initial checkout uses your token
 
-      - name: Create branch from issue
+      - name: Create and push branch
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          # Extract issue number and title from the event payload
+          # Build branch name from issue
           ISSUE_NUMBER="${{ github.event.issue.number }}"
           ISSUE_TITLE="${{ github.event.issue.title }}"
+          BRANCH_NAME="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
+          BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
+          echo "Creating branch: $BRANCH_NAME"
 
-          # Construct branch name: replace spaces with hyphens, make lowercase, remove unwanted chars, and limit length
-          ISSUE_BRANCH="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
-          ISSUE_BRANCH=$(echo "$ISSUE_BRANCH" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
-          echo "Creating branch: $ISSUE_BRANCH"
-
-          # Configure Git with the bot’s identity
+          # Set Git bot user
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Fetch the latest changes and switch to the default branch (assumed 'main')
+
+          # Reset the remote URL with the token to authenticate fetch/push
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.git
+
+          # Ensure we're on default branch (assumes it's 'main'; change if needed)
           git fetch origin
-          git checkout main
+          git checkout origin/main
+          git checkout -b "$BRANCH_NAME"
 
-          # Explicitly set the remote URL with your token to avoid authentication issues during push/fetch
-          git remote set-url origin "https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.git"
-          
-          # Create and push the new branch
-          git checkout -b "$ISSUE_BRANCH"
-          git push -u origin "$ISSUE_BRANCH"
-
-          echo "Branch '$ISSUE_BRANCH' created and pushed successfully."
+          # Push new branch
+          git push -u origin "$BRANCH_NAME"
