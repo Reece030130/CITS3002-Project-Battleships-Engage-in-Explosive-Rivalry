@@ -1,44 +1,41 @@
-name: Auto Branch for Issue
+name: Auto Create Branch from Issue
 
 on:
-  # The issue.opened event below is only needed for the "immediate" mode.
-  # The issue.assigned event below is only needed for the default ("auto") mode.
   issues:
-    types: [ opened, assigned ]
-  # The issue_comment.created event below is only needed for the ChatOps mode.
-  issue_comment:
-    types: [ created ]
-  # The pull_request events below are only needed for pull-request related features.
-  pull_request:
-    types: [ opened, closed ]
+    types: [opened, assigned]
 
 jobs:
-  create_issue_branch_job:
+  create-branch:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug Git Branch Creation
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Extract issue info
+        id: issue
         run: |
           ISSUE_NUMBER=${{ github.event.issue.number }}
           ISSUE_TITLE="${{ github.event.issue.title }}"
-  
-          # Clean and format the issue title for branch naming
-          ISSUE_BRANCH="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
-          ISSUE_BRANCH=$(echo "$ISSUE_BRANCH" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
-  
-          echo "Creating branch: $ISSUE_BRANCH"
+          # Clean up title to make it URL-safe
+          SAFE_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')
+          BRANCH_NAME="issue-${ISSUE_NUMBER}-${SAFE_TITLE}"
+          echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Create branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+          # Clone with token
+          git clone https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} repo
+          cd repo
           
-          # Fetch all branches and switch to the default branch (assumed as 'main')
-          git fetch origin
-          git checkout main
-          
-          # Debugging logs to show current status
-          git status
-          git branch -a
-          
-          # Create the new branch and push
-          git checkout -b "$ISSUE_BRANCH"
-          git push -u origin "$ISSUE_BRANCH"
-  
-          echo "Branch $ISSUE_BRANCH created and pushed"
+          git checkout -b "${{ steps.issue.outputs.branch_name }}"
+          git push origin "${{ steps.issue.outputs.branch_name }}"
