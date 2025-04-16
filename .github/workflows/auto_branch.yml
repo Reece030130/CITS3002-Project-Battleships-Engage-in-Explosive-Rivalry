@@ -1,0 +1,28 @@
+name: Auto Branch for Issue
+on:
+  issues:
+    types: [assigned]
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GH_PAT }}
+
+    - name: Create a branch for the issue
+      env:
+        GH_TOKEN: ${{ secrets.GH_PAT }}
+      run: |
+        ISSUE_NUMBER=${{ github.event.issue.number }}
+        ISSUE_TITLE="${{ github.event.issue.title }}"
+        ISSUE_BRANCH="issue-${ISSUE_NUMBER}-${ISSUE_TITLE// /-}"
+        ISSUE_BRANCH=$(echo $ISSUE_BRANCH | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
+        echo "Creating branch $ISSUE_BRANCH"
+        git config user.name github-actions[bot]
+        git config user.email github-actions[bot]@users.noreply.github.com
+        git checkout -b $ISSUE_BRANCH
+        git push -u origin $ISSUE_BRANCH
+        echo "Branch $ISSUE_BRANCH has been created"
