@@ -28,10 +28,6 @@ jobs:
           ISSUE_BRANCH=$(echo "$ISSUE_BRANCH" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | cut -c1-63)
   
           echo "Creating branch: $ISSUE_BRANCH"
-  
-          # Configure Git with bot credentials
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
           # Fetch all branches and switch to the default branch (assumed as 'main')
           git fetch origin
