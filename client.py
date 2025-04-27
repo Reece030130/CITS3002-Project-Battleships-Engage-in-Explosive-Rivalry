@@ -33,7 +33,7 @@ update_lock = threading.Lock()
 needs_redraw = True
 
 pending_update_coord = None  # Coordinate to manually update after fire
-
+on_hits = set()
 
 def parse_coord(coord_str):
     row = ord(coord_str[0].upper()) - ord('A')
@@ -64,8 +64,7 @@ def draw_board(screen, font):
                     color = GREEN if board_type == 'own' else ORANGE
                     pygame.draw.rect(screen, color, rect.inflate(-6, -6))
                 elif symbol == 'X':
-                    pygame.draw.line(screen, RED, rect.topleft, rect.bottomright, 3)
-                    pygame.draw.line(screen, RED, rect.topright, rect.bottomleft, 3)
+                        pygame.draw.rect(screen, RED, rect.inflate(-6, -6))
                 elif symbol == 'o':
                     pygame.draw.circle(screen, BLUE, rect.center, CELL_SIZE // 6)
 
@@ -109,6 +108,7 @@ def receive_messages(rfile):
                         row, col = parse_coord(coord)
                         if "hit" in line or "sank" in line:
                             own_board[row][col] = 'X'
+                            on_hits.add((row, col))
                         elif "missed" in line:
                             own_board[row][col] = 'o'
                         updated = True
