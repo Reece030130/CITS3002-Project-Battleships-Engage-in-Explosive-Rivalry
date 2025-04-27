@@ -73,6 +73,8 @@ def handle_game(p1_conn, p2_conn):
                 msg = f"HIT! You sank the {sunk_name}!" if sunk_name else "HIT!"
                 send(attacker_w, msg)
                 send(defender_w, f"[DEFENSE] Opponent hit your ship at {guess}!")
+                if sunk_name:
+                    send_ship_grid(defender_w, defender_board)
             elif result == 'miss':
                 send(attacker_w, "MISS!")
                 send(defender_w, f"[DEFENSE] Opponent missed at {guess}.")
