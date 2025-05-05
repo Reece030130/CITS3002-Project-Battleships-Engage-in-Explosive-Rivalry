@@ -1,6 +1,7 @@
 import socket
 import threading
 import pygame
+import sys
 
 # Constants
 HOST = '127.0.0.1'
@@ -35,29 +36,41 @@ needs_redraw = True
 pending_update_coord = None
 player_id = None
 
+
 def parse_coord(coord_str):
     row = ord(coord_str[0].upper()) - ord('A')
     col = int(coord_str[1:]) - 1
     return row, col
 
+
 def coord_to_str(row, col):
     return chr(ord('A') + row) + str(col + 1)
 
+
 def receive_messages(rfile):
-    global is_my_turn, last_result, needs_redraw, pending_update_coord, player_id
+    global is_my_turn, last_result, needs_redraw, pending_update_coord, player_id, running
     while running:
         line = rfile.readline()
         if not line:
+            print("[INFO] Connection closed by server.")
+            running = False
             break
         line = line.strip()
+        print(f"[RECV] {line}")
+        # handle server exit signal
+        if line.startswith("[EXIT]"):
+            print("[INFO] Server requested shutdown.")
+            running = False
+            break
         updated = False
         if line.startswith("[CHAT]"):
-            # show “[CHAT] Player N: message” in the chat window
             message_history.append(line)
+            print(line)
             if len(message_history) > MAX_HISTORY:
                 message_history.pop(0)
             updated = True
         elif line.startswith("[DEFENSE]"):
+            print(f"[DEFENSE] {line}")
             for word in reversed(line.split()):
                 if len(word) >= 2 and word[0].isalpha() and word[1:].isdigit():
                     r, c = parse_coord(word.strip("!. "))
@@ -66,6 +79,7 @@ def receive_messages(rfile):
                     break
         elif line.startswith("HIT") or line.startswith("MISS") or "sank" in line:
             last_result = line
+            print(f"[RESULT] {line}")
             if pending_update_coord:
                 r, c = pending_update_coord
                 enemy_board[r][c] = 'X' if "hit" in line or "sank" in line else 'o'
@@ -73,6 +87,7 @@ def receive_messages(rfile):
             updated = True
         elif line.startswith("[TURN]"):
             is_my_turn = True
+            print("[INFO] It's your turn.")
             updated = True
         elif line.startswith("GRID"):
             rfile.readline()
@@ -82,35 +97,48 @@ def receive_messages(rfile):
             rfile.readline()
             updated = True
         elif line.startswith("[SHIPS]"):
+            # server is sending us our updated hidden grid (own_board)
             for r in range(BOARD_SIZE):
-                own_board[r] = rfile.readline().split()
+                row = rfile.readline().strip().split()
+                own_board[r] = row
+            # skip the blank line
             rfile.readline()
             updated = True
+            continue
         elif line.startswith("[INFO] You are Player"):
-            # set player_id
             try:
                 player_id = int(line.split()[-1].rstrip('.'))
             except:
                 pass
+            print(line)
+            message_history.append(line)
+            if len(message_history) > MAX_HISTORY:
+                message_history.pop(0)
+            updated = True
+
+        elif line.startswith("[INFO] Game over"):
+            print(f"[GAME] {line}")
             message_history.append(line)
             if len(message_history) > MAX_HISTORY:
                 message_history.pop(0)
             updated = True
         elif "WIN" in line or "LOSE" in line:
             last_result = line
+            print(f"[GAME] {line}")
             is_my_turn = False
             updated = True
         else:
             message_history.append(line)
+            print(line)
             if len(message_history) > MAX_HISTORY:
                 message_history.pop(0)
         if updated:
             with update_lock:
                 needs_redraw = True
 
+
 def draw_board(screen, font):
     screen.fill(WHITE)
-
     for board_type in ['own', 'enemy']:
         board = own_board if board_type == 'own' else enemy_board
         x0 = MARGIN if board_type == 'own' else MARGIN + BOARD_SIZE * CELL_SIZE + GRID_GAP
@@ -131,14 +159,10 @@ def draw_board(screen, font):
             screen.blit(font.render(str(i + 1), True, BLACK), (x0 + i * CELL_SIZE + 5, MARGIN - 20))
         title = "Your Board" if board_type == 'own' else "Enemy Board"
         screen.blit(font.render(title, True, BLACK), (x0, MARGIN + BOARD_SIZE * CELL_SIZE + 5))
-
-    # Status
     status_text = "Your turn! Click or T to type." if is_my_turn else "Waiting for opponent..."
     screen.blit(font.render(status_text, True, BLACK), (MARGIN, WINDOW_HEIGHT - 80))
     if last_result:
         screen.blit(font.render(f"Last result: {last_result}", True, BLACK), (MARGIN, WINDOW_HEIGHT - 55))
-
-    # Input box
     if input_mode:
         box_w = 160 + len(input_str) * 12
         box_h = font.get_height() + 8
@@ -147,8 +171,6 @@ def draw_board(screen, font):
         pygame.draw.rect(screen, BLACK, (box_x, box_y, box_w, box_h), 2)
         prompt = font.render('Type: ' + input_str, True, BLACK)
         screen.blit(prompt, (box_x + 4, box_y + 4))
-
-    # Chat box
     chat_box_x = MARGIN * 3 + CELL_SIZE * BOARD_SIZE * 2 + GRID_GAP
     chat_box_y = MARGIN
     pygame.draw.rect(screen, (240, 240, 240), (chat_box_x, chat_box_y, CHAT_WIDTH, MAX_HISTORY * 22 + 20))
@@ -156,8 +178,8 @@ def draw_board(screen, font):
     for i, msg in enumerate(message_history[-MAX_HISTORY:]):
         msg_surface = font.render(msg, True, BLACK)
         screen.blit(msg_surface, (chat_box_x + 8, chat_box_y + 10 + i * 22))
-
     pygame.display.flip()
+
 
 def main():
     global is_my_turn, running, needs_redraw, pending_update_coord, input_mode, input_str
@@ -165,10 +187,88 @@ def main():
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption('Battleship - BEER Edition')
     font = pygame.font.SysFont(None, 28)
-
     with socket.socket() as s:
         s.connect((HOST, PORT))
         rfile, wfile = s.makefile('r'), s.makefile('w')
+        print(f"[INFO] Connected to server at {HOST}:{PORT}")
+
+        # Ship placement phase
+        from battleship import Board, SHIPS
+        board = Board()
+        print("[INFO] Ship placement: '/random' for auto, '/manual' for step-by-step, '/start' to begin")
+        placement_done = False
+        while not placement_done:
+            cmd = input('Placement> ').strip().lower()
+            if cmd == '/random':
+                board.place_ships_randomly()
+                for r in range(BOARD_SIZE):
+                    own_board[r] = list(board.hidden_grid[r])
+                print('[INFO] Ships randomly placed:')
+                for row in own_board:
+                    print(' '.join(row))
+            elif cmd == '/manual':
+                board.place_ships_manually()
+                for r in range(BOARD_SIZE):
+                    own_board[r] = list(board.hidden_grid[r])
+                print('[INFO] Ships manually placed:')
+                for row in own_board:
+                    print(' '.join(row))
+            elif cmd.lower().startswith('/place'):
+                parts = cmd.split()
+                if len(parts) != 4:
+                    print("[ERROR] Usage: /place <coord> <H|V> <ship>")
+                    continue
+                _, coord_str, ori_str, ship_name = parts
+                ori = ori_str.upper()
+                if ori not in ('H', 'V'):
+                    print("[ERROR] Orientation must be H or V.")
+                    continue
+                try:
+                    row, col = parse_coord(coord_str)
+                except ValueError as e:
+                    print(f"[ERROR] Invalid coordinate: {e}")
+                    continue
+
+                # Find the ship size by case-insensitive match
+                for name, size in SHIPS:
+                    if name.lower() == ship_name.lower():
+                        ship_display = name
+                        ship_size = size
+                        break
+                else:
+                    valid_names = [n for n, _ in SHIPS]
+                    print(f"[ERROR] Unknown ship '{ship_name}'. Valid: {valid_names}")
+                    continue
+
+                orient_flag = 0 if ori == 'H' else 1
+                # Validate placement
+                if not board.can_place_ship(row, col, ship_size, orient_flag):
+                    print(f"[ERROR] Cannot place {ship_display} at {coord_str} ({ori}).")
+                    continue
+
+                # Perform placement
+                occupied = board.do_place_ship(row, col, ship_size, orient_flag)
+                board.placed_ships.append({
+                    'name': ship_display,
+                    'positions': occupied
+                })
+                # Mirror to own_board for display
+                for (r, c) in occupied:
+                    own_board[r][c] = 'S'
+                print(f"[INFO] Placed {ship_display} at {coord_str} ({ori}).")
+     
+            elif cmd == '/start':
+                if len(board.placed_ships) == len(SHIPS):
+                    placement_done = True
+                else:
+                    print(f"[ERROR] Not all ships placed ({len(board.placed_ships)}/{len(SHIPS)}). Complete placement before starting.")
+            else:
+                print("[ERROR] Unknown command. Use '/random', '/manual', or '/start'.")
+
+        # send placement to server
+        for row in own_board:
+            wfile.write(' '.join(row) + '\n')
+        wfile.flush()
         threading.Thread(target=receive_messages, args=(rfile,), daemon=True).start()
         clock = pygame.time.Clock()
         while running:
@@ -193,22 +293,30 @@ def main():
                             needs_redraw = True
                         elif ev.key == pygame.K_RETURN:
                             cmd = input_str.strip()
-                            if cmd.lower().startswith('/chat '):
+                            # quit command
+                            if cmd.lower() == '/quit':
+                                print("[INFO] Sending quit to server and exiting...")
+                                wfile.write('quit\n'); wfile.flush()
+                                running = False
+                            # chat command
+                            elif cmd.lower().startswith('/chat '):
                                 message = cmd[6:].strip()
+                                print(f"[YOU] {message}")
                                 wfile.write(f"[CHAT]{message}\n"); wfile.flush()
                                 message_history.append(f"[CHAT] Player {player_id}: {message}")
                                 if len(message_history) > MAX_HISTORY:
                                     message_history.pop(0)
-                                needs_redraw = True  # Force redraw immediately
+                                needs_redraw = True
+                            # attack command
                             elif is_my_turn:
                                 try:
                                     r, c = parse_coord(cmd)
+                                    print(f"[ATTACK] {cmd.upper()}")
                                     pending_update_coord = (r, c)
-                                    wfile.write(f"{cmd.upper()}\n")
-                                    wfile.flush()
+                                    wfile.write(f"{cmd.upper()}\n"); wfile.flush()
                                     is_my_turn = False
                                 except:
-                                    print("Invalid coordinate")
+                                    print("[ERROR] Invalid coordinate")
                             input_mode = False
                             input_str = ''
                             needs_redraw = True
@@ -221,12 +329,14 @@ def main():
                     if ex <= mx <= ex + BOARD_SIZE * CELL_SIZE and MARGIN <= my <= MARGIN + BOARD_SIZE * CELL_SIZE:
                         r = (my - MARGIN) // CELL_SIZE
                         c = (mx - ex) // CELL_SIZE
+                        print(f"[ATTACK] {coord_to_str(r, c)}")
                         pending_update_coord = (r, c)
-                        wfile.write(coord_to_str(r, c) + '\n')
-                        wfile.flush()
+                        wfile.write(coord_to_str(r, c) + '\n'); wfile.flush()
                         is_my_turn = False
-            clock.tick(30)
+        clock.tick(30)
+    print("[INFO] Exiting client.")
     pygame.quit()
+    sys.exit()
 
 if __name__ == '__main__':
     main()
