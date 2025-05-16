@@ -18,10 +18,13 @@ def send_board(wfile: TextIO, board) -> None:
     wfile.flush()
 
 
-def send_ship_grid(wfile: TextIO, board) -> None:
+def send_ship_grid(wfile: TextIO, board, player_id=None) -> None:
     """Send the defender's hidden grid (their ship layout)."""
     wfile.write("[SHIPS]\n")
+    if player_id is not None:
+        wfile.write(f"Player {player_id}\n")
     for r in range(board.size):
         wfile.write(" ".join(board.hidden_grid[r]) + "\n")
     wfile.write("\n")
     wfile.flush()
+
