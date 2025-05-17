@@ -10,6 +10,7 @@ from itertools import product
 
 HOST = '127.0.0.1'
 PORT = 5000
+TURN_TIMEOUT = 15
 
 waiting_players = []
 lock = threading.Lock()
@@ -222,10 +223,15 @@ def handle_game(p1_conn, p2_conn, rfiles=None, wfiles=None):
         defender = conns[1 - turn_idx]
         defender_board = boards[1 - turn_idx]
 
-        send(wfiles[attacker], f"[TURN] Your move, Player {turn_idx+1}.")
+        send(wfiles[attacker], f"[TURN] Your move, Player {turn_idx+1}. You have {TURN_TIMEOUT} seconds.")
 
         while True:
-            ready, _, _ = select.select(conns, [], [])
+            ready, _, _ = select.select(conns, [], [], TURN_TIMEOUT)
+            if not ready:
+                send(wfiles[attacker], "[INFO] Timeout! Turn skipped.")
+                send(wfiles[defender], "[INFO] Opponent timed out.")
+                turn_idx = 1 - turn_idx
+                break  # 回到上层 while True 循环，换人继续
             for sock in ready:
                 line = rfiles[sock].readline()
                 if not line or line.strip().lower() == 'quit':

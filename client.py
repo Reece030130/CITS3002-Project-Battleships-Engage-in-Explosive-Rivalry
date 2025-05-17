@@ -92,7 +92,11 @@ def receive_messages(rfile, wfile):
             updated = True
         elif line.startswith("[TURN]"):
             is_my_turn = True
-            print("[INFO] It's your turn.")
+            print(f"[INFO] {line}")
+            message_history.append(line)
+            if len(message_history) > MAX_HISTORY:
+                message_history.pop(0)
+            last_result = line  # ✅ 显示在状态栏中
             updated = True
         elif line.startswith("GRID"):
             rfile.readline()
@@ -152,6 +156,24 @@ def receive_messages(rfile, wfile):
                 needs_redraw = True
 
 
+def wrap_text(text, font, max_width):
+    """Wraps a line of text into multiple lines to fit max_width."""
+    words = text.split(' ')
+    lines = []
+    current_line = ""
+    for word in words:
+        test_line = current_line + (' ' if current_line else '') + word
+        if font.size(test_line)[0] <= max_width:
+            current_line = test_line
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+    return lines
+
+
 def draw_board(screen, font):
     screen.fill(WHITE)
     for board_type in ['own', 'enemy']:
@@ -174,7 +196,7 @@ def draw_board(screen, font):
             screen.blit(font.render(str(i + 1), True, BLACK), (x0 + i * CELL_SIZE + 5, MARGIN - 20))
         title = "Your Board" if board_type == 'own' else "Enemy Board"
         screen.blit(font.render(title, True, BLACK), (x0, MARGIN + BOARD_SIZE * CELL_SIZE + 5))
-    status_text = "Your turn! Click or T to type." if is_my_turn else "Waiting for opponent..."
+    status_text = last_result if is_my_turn else "Waiting for opponent..."
     screen.blit(font.render(status_text, True, BLACK), (MARGIN, WINDOW_HEIGHT - 80))
     if last_result:
         screen.blit(font.render(f"Last result: {last_result}", True, BLACK), (MARGIN, WINDOW_HEIGHT - 55))
@@ -190,8 +212,12 @@ def draw_board(screen, font):
     chat_box_y = MARGIN
     pygame.draw.rect(screen, (240, 240, 240), (chat_box_x, chat_box_y, CHAT_WIDTH, MAX_HISTORY * 22 + 20))
     pygame.draw.rect(screen, BLACK, (chat_box_x, chat_box_y, CHAT_WIDTH, MAX_HISTORY * 22 + 20), 2)
-    for i, msg in enumerate(message_history[-MAX_HISTORY:]):
-        msg_surface = font.render(msg, True, BLACK)
+    chat_lines = []
+    for msg in message_history[-MAX_HISTORY:]:
+        wrapped = wrap_text(msg, font, CHAT_WIDTH - 16)
+        chat_lines.extend(wrapped)
+    for i, line in enumerate(chat_lines[-MAX_HISTORY * 2:]):
+        msg_surface = font.render(line, True, BLACK)
         screen.blit(msg_surface, (chat_box_x + 8, chat_box_y + 10 + i * 22))
     pygame.display.flip()
 
@@ -355,6 +381,9 @@ def main():
                     if not is_my_turn:
                         print("[INFO] Not your turn. Please wait.")
                         last_result = "Not your turn!"
+                        message_history.append("[INFO] Not your turn. Please wait.")
+                        if len(message_history) > MAX_HISTORY:
+                            message_history.pop(0)
                         needs_redraw = True
                         continue
                     mx, my = pygame.mouse.get_pos()
