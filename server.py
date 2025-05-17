@@ -6,6 +6,7 @@ from battleship import Board, parse_coordinate, SHIPS, BOARD_SIZE
 from collections import deque
 from collections import Counter
 from itertools import combinations
+from itertools import product
 
 HOST = '127.0.0.1'
 PORT = 5000
@@ -90,7 +91,6 @@ def get_connected_blocks(grid):
 
 
 def try_assign_ships(lines, expected_sizes):
-    from itertools import product
 
     expected_sizes = sorted(expected_sizes, reverse=True)
     used = set()
@@ -117,7 +117,6 @@ def try_assign_ships(lines, expected_sizes):
 
 
 def extract_ships(grid):
-    from server import SHIPS
     expected_sizes = [size for _, size in SHIPS]
     lines = []
 
@@ -152,8 +151,6 @@ def extract_ships(grid):
 
 
 def handle_game(p1_conn, p2_conn, rfiles=None, wfiles=None):
-    from battleship import Board, parse_coordinate, SHIPS, BOARD_SIZE
-    from collections import Counter
 
     conns = [p1_conn, p2_conn]
 
@@ -246,7 +243,7 @@ def handle_game(p1_conn, p2_conn, rfiles=None, wfiles=None):
                     try:
                         r, c = parse_coordinate(line)
                         if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
-                            raise ValueError("坐标越界")
+                            raise ValueError("wrong coordinates")
                         result, sunk = defender_board.fire_at(r, c)
                         if result == 'hit':
                             send(wfiles[attacker], f"HIT!{' You sank '+sunk+'!' if sunk else ''}")
