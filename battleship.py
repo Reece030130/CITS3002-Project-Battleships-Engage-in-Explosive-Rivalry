@@ -111,24 +111,50 @@ class Board:
 
 
     def can_place_ship(self, row, col, ship_size, orientation):
-        """
-        Check if we can place a ship of length 'ship_size' at (row, col)
-        with the given orientation (0 => horizontal, 1 => vertical).
-        Returns True if the space is free, False otherwise.
-        """
-        if orientation == 0:  # Horizontal
-            if col + ship_size > self.size:
-                return False
-            for c in range(col, col + ship_size):
-                if self.hidden_grid[row][c] != '.':
+            """
+            Check if we can place a ship of length 'ship_size' at (row, col)
+            with the given orientation (0 => horizontal, 1 => vertical).
+            Ensures no overlapping and no orthogonal adjacency to any existing 'S'.
+            """
+            # Boundary check
+            if orientation == 0:  # Horizontal
+                if col + ship_size > self.size:
                     return False
-        else:  # Vertical
-            if row + ship_size > self.size:
-                return False
-            for r in range(row, row + ship_size):
-                if self.hidden_grid[r][col] != '.':
+                # Check each segment cell and its neighbors
+                for c in range(col, col + ship_size):
+                    # overlap
+                    if self.hidden_grid[row][c] != '.':
+                        return False
+                    # above / below
+                    if row > 0 and self.hidden_grid[row-1][c] == 'S':
+                        return False
+                    if row < self.size-1 and self.hidden_grid[row+1][c] == 'S':
+                        return False
+                # end-caps (left/right of the ship)
+                if col > 0 and self.hidden_grid[row][col-1] == 'S':
                     return False
-        return True
+                if col + ship_size < self.size and self.hidden_grid[row][col+ship_size] == 'S':
+                    return False
+                return True
+            else:  # Vertical
+                if row + ship_size > self.size:
+                    return False
+                # Check each segment cell and its neighbors
+                for r in range(row, row + ship_size):
+                    # overlap
+                    if self.hidden_grid[r][col] != '.':
+                        return False
+                    # left / right
+                    if col > 0 and self.hidden_grid[r][col-1] == 'S':
+                        return False
+                    if col < self.size-1 and self.hidden_grid[r][col+1] == 'S':
+                        return False
+                # end-caps (above/below the ship)
+                if row > 0 and self.hidden_grid[row-1][col] == 'S':
+                    return False
+                if row + ship_size < self.size and self.hidden_grid[row+ship_size][col] == 'S':
+                    return False
+                return True
 
     def do_place_ship(self, row, col, ship_size, orientation):
         """

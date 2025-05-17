@@ -21,6 +21,9 @@ BLUE = (30, 144, 255)
 RED = (255, 69, 0)
 GREEN = (34, 139, 34)
 ORANGE = (255, 165, 0)
+MAX_PLAYERS = 2
+player1_board = [['.' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+player2_board = [['.' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
 
 own_board = [['.' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
 enemy_board = [['.' for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
@@ -47,6 +50,77 @@ def coord_to_str(row, col):
     return chr(ord('A') + row) + str(col + 1)
 
 
+def draw_board(screen, font, boards=None):
+    """
+    If boards=[b1,b2], draws:
+      | b1 (Player 1 own) | b2 (Player 2 own) | chat |
+    Otherwise (player mode):
+      | own_board | enemy_board | chat |
+    """
+    screen.fill(WHITE)
+
+    # positions
+    left_x = MARGIN
+    mid_x  = MARGIN + BOARD_SIZE * CELL_SIZE + GRID_GAP
+    chat_x = mid_x   + BOARD_SIZE * CELL_SIZE + GRID_GAP
+    chat_y = MARGIN
+    chat_h = MAX_HISTORY * 22 + 20
+
+    # choose grids & titles
+    if boards and len(boards) == 2:
+        grids  = boards
+        titles = ("Player 1", "Player 2")
+    else:
+        grids  = [own_board, enemy_board]
+        titles = ("Your Board", "Enemy Board")
+
+    # draw two side-by-side grids
+    for (grid, title, x0) in zip(grids, titles, (left_x, mid_x)):
+        # cells
+        for r in range(BOARD_SIZE):
+            for c in range(BOARD_SIZE):
+                rect = pygame.Rect(
+                    x0 + c*CELL_SIZE,
+                    MARGIN + r*CELL_SIZE,
+                    CELL_SIZE, CELL_SIZE
+                )
+                pygame.draw.rect(screen, BLACK, rect, 2)
+                sym = grid[r][c]
+                if sym == 'S':
+                    color = GREEN if title in ("Your Board","Player 1") else ORANGE
+                    pygame.draw.rect(screen, color, rect.inflate(-6, -6))
+                elif sym == 'X':
+                    pygame.draw.rect(screen, RED, rect.inflate(-6, -6))
+                elif sym.lower() == 'o':
+                    pygame.draw.circle(screen, BLUE, rect.center, CELL_SIZE//6)
+
+        # labels A–J and 1–10
+        for i in range(BOARD_SIZE):
+            screen.blit(font.render(chr(ord('A')+i), True, BLACK),
+                        (x0 - 20, MARGIN + i*CELL_SIZE + 5))
+            screen.blit(font.render(str(i+1), True, BLACK),
+                        (x0 + i*CELL_SIZE + 5, MARGIN - 20))
+
+        # title
+        screen.blit(font.render(title, True, BLACK),
+                    (x0, MARGIN + BOARD_SIZE*CELL_SIZE + 5))
+
+    # chatbox on the far right
+    pygame.draw.rect(screen, (240,240,240),
+                     (chat_x, chat_y, CHAT_WIDTH, chat_h))
+    pygame.draw.rect(screen, BLACK,
+                     (chat_x, chat_y, CHAT_WIDTH, chat_h), 2)
+    for i, msg in enumerate(message_history[-MAX_HISTORY:]):
+        screen.blit(font.render(msg, True, BLACK),
+                    (chat_x + 8, chat_y + 10 + i*22))
+
+    # input mode line
+    if input_mode:
+        screen.blit(font.render("Command: " + input_str, True, BLACK),
+                    (chat_x, chat_y + chat_h + 10))
+
+    pygame.display.flip()
+
 def receive_messages(rfile):
     global is_my_turn, last_result, needs_redraw, pending_update_coord, player_id, running
     while running:
@@ -56,7 +130,6 @@ def receive_messages(rfile):
             running = False
             break
         line = line.strip()
-        print(f"[RECV] {line}")
         # handle server exit signal
         if line.startswith("[EXIT]"):
             print("[INFO] Server requested shutdown.")
@@ -65,6 +138,7 @@ def receive_messages(rfile):
         updated = False
         if line.startswith("[CHAT]"):
             message_history.append(line)
+            needs_redraw = True
             print(line)
             if len(message_history) > MAX_HISTORY:
                 message_history.pop(0)
@@ -97,14 +171,22 @@ def receive_messages(rfile):
             rfile.readline()
             updated = True
         elif line.startswith("[SHIPS]"):
-            # server is sending us our updated hidden grid (own_board)
-            for r in range(BOARD_SIZE):
+            player_line = rfile.readline().strip()
+            if player_line == "Player 1":
+                target_board = player1_board
+            elif player_line == "Player 2":
+                target_board = player2_board
+            else:
+                target_board = own_board  # fallback (for player mode)
+                target_board[0] = player_line.strip().split()  # this line is actually a board row
+
+            start_row = 1 if target_board is own_board else 0
+            for r in range(start_row, BOARD_SIZE):
                 row = rfile.readline().strip().split()
-                own_board[r] = row
-            # skip the blank line
-            rfile.readline()
+                target_board[r] = row
+            rfile.readline()  # skip blank
             updated = True
-            continue
+
         elif line.startswith("[INFO] You are Player"):
             try:
                 player_id = int(line.split()[-1].rstrip('.'))
@@ -137,48 +219,8 @@ def receive_messages(rfile):
                 needs_redraw = True
 
 
-def draw_board(screen, font):
-    screen.fill(WHITE)
-    for board_type in ['own', 'enemy']:
-        board = own_board if board_type == 'own' else enemy_board
-        x0 = MARGIN if board_type == 'own' else MARGIN + BOARD_SIZE * CELL_SIZE + GRID_GAP
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
-                rect = pygame.Rect(x0 + c * CELL_SIZE, MARGIN + r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-                pygame.draw.rect(screen, BLACK, rect, 2)
-                sym = board[r][c]
-                if sym == 'S':
-                    color = GREEN if board_type == 'own' else ORANGE
-                    pygame.draw.rect(screen, color, rect.inflate(-6, -6))
-                elif sym == 'X':
-                    pygame.draw.rect(screen, RED, rect.inflate(-6, -6))
-                elif sym == 'o':
-                    pygame.draw.circle(screen, BLUE, rect.center, CELL_SIZE // 6)
-        for i in range(BOARD_SIZE):
-            screen.blit(font.render(chr(ord('A') + i), True, BLACK), (x0 - 20, MARGIN + i * CELL_SIZE + 5))
-            screen.blit(font.render(str(i + 1), True, BLACK), (x0 + i * CELL_SIZE + 5, MARGIN - 20))
-        title = "Your Board" if board_type == 'own' else "Enemy Board"
-        screen.blit(font.render(title, True, BLACK), (x0, MARGIN + BOARD_SIZE * CELL_SIZE + 5))
-    status_text = "Your turn! Click or T to type." if is_my_turn else "Waiting for opponent..."
-    screen.blit(font.render(status_text, True, BLACK), (MARGIN, WINDOW_HEIGHT - 80))
-    if last_result:
-        screen.blit(font.render(f"Last result: {last_result}", True, BLACK), (MARGIN, WINDOW_HEIGHT - 55))
-    if input_mode:
-        box_w = 160 + len(input_str) * 12
-        box_h = font.get_height() + 8
-        box_x, box_y = MARGIN, WINDOW_HEIGHT - 40
-        pygame.draw.rect(screen, GRAY, (box_x, box_y, box_w, box_h))
-        pygame.draw.rect(screen, BLACK, (box_x, box_y, box_w, box_h), 2)
-        prompt = font.render('Type: ' + input_str, True, BLACK)
-        screen.blit(prompt, (box_x + 4, box_y + 4))
-    chat_box_x = MARGIN * 3 + CELL_SIZE * BOARD_SIZE * 2 + GRID_GAP
-    chat_box_y = MARGIN
-    pygame.draw.rect(screen, (240, 240, 240), (chat_box_x, chat_box_y, CHAT_WIDTH, MAX_HISTORY * 22 + 20))
-    pygame.draw.rect(screen, BLACK, (chat_box_x, chat_box_y, CHAT_WIDTH, MAX_HISTORY * 22 + 20), 2)
-    for i, msg in enumerate(message_history[-MAX_HISTORY:]):
-        msg_surface = font.render(msg, True, BLACK)
-        screen.blit(msg_surface, (chat_box_x + 8, chat_box_y + 10 + i * 22))
-    pygame.display.flip()
+
+
 
 
 def main():
@@ -190,7 +232,82 @@ def main():
     with socket.socket() as s:
         s.connect((HOST, PORT))
         rfile, wfile = s.makefile('r'), s.makefile('w')
-        print(f"[INFO] Connected to server at {HOST}:{PORT}")
+            # —— read the server’s count header ——
+        hdr = rfile.readline().strip()
+        if hdr.startswith("[COUNT]"):
+            num, _, maxp = hdr.partition("] ")[2].partition("/")
+            current = int(num)
+            maxp    = int(maxp)
+            print(f"[INFO] Players: {current}/{maxp}")
+        else:
+        # fallback
+            current, maxp = 0, MAX_PLAYERS
+
+        # if we’re already full, force spectator mode
+        if current >= maxp:
+            role = '/spectator'
+            print("[WARN] Player slots full → joining as spectator.")
+        else:
+            role = input("Enter /player to play or /spectator to watch: ").strip().lower()
+
+        wfile.write(role + "\n")
+        wfile.flush()
+
+        # read the server’s immediate response
+        reply = rfile.readline().strip()
+        print(reply)
+        # if it’s an error, bail out before placement/game-loop
+        if reply.startswith("[ERROR]") and role == '/player':
+            print("[INFO] Exiting client because player slots are full.")
+            return
+
+        is_spectator = (role == '/spectator')
+
+        if is_spectator:
+            print("[INFO] You are now a spectator. Sit back and enjoy!")
+            threading.Thread(target=receive_messages, args=(rfile,), daemon=True).start()
+            clock = pygame.time.Clock()
+
+            # Spectator view: left = P1 own_board, center = P2 own_board, right = chatbox
+            while running:
+                for ev in pygame.event.get():
+                    if ev.type == pygame.QUIT:
+                        running = False
+                    elif ev.type == pygame.KEYDOWN:
+                        if not input_mode and ev.key == pygame.K_t:
+                            input_mode = True
+                            input_str = ''
+                            needs_redraw = True
+                        elif input_mode:
+                            if ev.key == pygame.K_ESCAPE:
+                                input_mode = False
+                                needs_redraw = True
+                            elif ev.key == pygame.K_BACKSPACE:
+                                input_str = input_str[:-1]
+                                needs_redraw = True
+                            elif ev.key == pygame.K_RETURN:
+                                cmd = input_str.strip()
+                                if cmd.lower().startswith('/chat '):
+                                    message = cmd[6:].strip()
+                                    print(f"[YOU] {message}")
+                                    wfile.write(f"[CHAT]{message}\n"); wfile.flush()
+                                    if len(message_history) > MAX_HISTORY:
+                                        message_history.pop(0)
+                                    needs_redraw = True
+                                elif cmd.lower() == '/quit':
+                                    wfile.write("quit\n"); wfile.flush()
+                                    running = False
+                                input_mode = False
+                                input_str = ''
+                                needs_redraw = True
+                            elif ev.unicode and ev.unicode.isprintable():
+                                input_str += ev.unicode
+                                needs_redraw = True
+
+                draw_board(screen, font, boards=[player1_board, player2_board])
+                clock.tick(30)
+
+
 
         # Ship placement phase
         from battleship import Board, SHIPS
@@ -200,12 +317,24 @@ def main():
         while not placement_done:
             cmd = input('Placement> ').strip().lower()
             if cmd == '/random':
-                board.place_ships_randomly()
-                for r in range(BOARD_SIZE):
-                    own_board[r] = list(board.hidden_grid[r])
-                print('[INFO] Ships randomly placed:')
-                for row in own_board:
-                    print(' '.join(row))
+                max_attempts = 5
+                attempt = 0
+                while attempt < max_attempts:
+                    board.place_ships_randomly()
+                    if len(board.placed_ships) == len(SHIPS):
+                        # Mirror to own_board for display
+                        for r in range(BOARD_SIZE):
+                            own_board[r] = list(board.hidden_grid[r])
+                        print('[INFO] Ships randomly placed:')
+                        for row in own_board:
+                            print(' '.join(row))
+                        break
+                    else:
+                        attempt += 1
+                        print(f"[WARN] Random placement failed ({attempt}/{max_attempts}). Retrying...")
+                
+                if attempt == max_attempts:
+                    print("[ERROR] Could not place all ships after multiple attempts. Try manual placement or restart.")
             elif cmd == '/manual':
                 board.place_ships_manually()
                 for r in range(BOARD_SIZE):
@@ -303,7 +432,7 @@ def main():
                                 message = cmd[6:].strip()
                                 print(f"[YOU] {message}")
                                 wfile.write(f"[CHAT]{message}\n"); wfile.flush()
-                                message_history.append(f"[CHAT] Player {player_id}: {message}")
+                                # message_history.append(f"[CHAT] Player {player_id}: {message}")
                                 if len(message_history) > MAX_HISTORY:
                                     message_history.pop(0)
                                 needs_redraw = True
